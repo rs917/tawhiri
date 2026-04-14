@@ -19,6 +19,7 @@
 Provide the HTTP API for Tawhiri.
 """
 
+
 from flask import Flask, jsonify, request, g, send_file
 from datetime import datetime
 import time
@@ -279,7 +280,7 @@ def _extract_parameter(data, parameter, cast, default=None, ignore=False,
 
 
 # Response ####################################################################
-def run_prediction(req):
+def run_prediction(req,mode=None):
     """
     Run the prediction.
     """
@@ -349,7 +350,20 @@ def run_prediction(req):
 
     # Format trajectory
     if req['profile'] == PROFILE_STANDARD:
-        resp['prediction'] = _parse_stages(["ascent", "descent"], result)
+        # resp['prediction'] = _parse_stages(["ascent", "descent"], result)　元々のコード
+        # --- 追加 ---
+        valid_stages = ["ascent", "descent"]
+        filtered_result = result
+        #分ける
+        if mode == 'ascent':
+            valid_stages = ["ascent"]
+            filtered_result = [result[0]]
+        elif mode == 'descent':
+            valid_stages = ["descent"]
+            filtered_result = [result[1]]
+
+        resp['prediction'] = _parse_stages(valid_stages, filtered_result)
+
     elif req['profile'] == PROFILE_FLOAT:
         resp['prediction'] = _parse_stages(["ascent", "float"], result)
     elif req['profile'] == PROFILE_REVERSE:
@@ -402,8 +416,14 @@ def main():
     """
     Single API endpoint which accepts GET requests.
     """
+    # --- 追加 ---
+    # modeパラメータを取得　デフォルトはNone
+    mode = request.args.get('mode', None)
+    # ----------------
+
     g.request_start_time = time.time()
-    response = run_prediction(parse_request(request.args))
+    # response = run_prediction(parse_request(request.args))にmode引数を追加
+    response = run_prediction(parse_request(request.args),mode=mode)
     g.request_complete_time = time.time()
     response['metadata'] = _format_request_metadata()
 
