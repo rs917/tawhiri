@@ -39,6 +39,29 @@ def make_constant_ascent(ascent_rate):
         return 0.0, 0.0, ascent_rate
     return constant_ascent
 
+#岩谷の論文再現コード
+def make_varying_ascent(initial_ascent_rate, surface_temp_k, dataset, warningcounts):
+    """
+    気温の逆数に比例して上昇速度が変化するモデル (岩谷技研の論文に基づく)
+    v = v_i * (T_s / T)
+    """
+    # 拡張したインターポレータを取得
+    get_wind_and_temp = interpolate.make_interpolator(dataset, warningcounts)
+    dataset_epoch = calendar.timegm(dataset.ds_time.timetuple())
+
+    def varying_ascent(t, lat, lng, alt):
+        # (u, v, temp) を取得
+        u, v, temp = get_wind_and_temp((t - dataset_epoch) / 3600.0, lat, lng, alt)
+        
+        # 論文の式(8)を適用: 速度 = 初期速度 * (地表気温 / 現在気温)
+        # 気温が下がる（高度が上がる）ほど、v_z は大きくなる
+        v_z = initial_ascent_rate * (surface_temp_k / temp)
+        
+        # 水平方向の移動(dlat, dlng)はここでは計算せず、垂直方向(dalt)のみ返す
+        return 0.0, 0.0, v_z
+
+    return varying_ascent
+
 
 def make_drag_descent(sea_level_descent_rate):
     """Return a descent-under-parachute model with sea level descent
@@ -82,7 +105,8 @@ def make_wind_velocity(dataset, warningcounts):
     dataset_epoch = calendar.timegm(dataset.ds_time.timetuple())
     def wind_velocity(t, lat, lng, alt):
         t -= dataset_epoch
-        u, v = get_wind(t / 3600.0, lat, lng, alt)
+# tempも返ってくるので3つで受け取る (横移動にtempは不要なので捨てる)
+        u, v, _temp = get_wind(t / 3600.0, lat, lng, alt)
         R = 6371009 + alt
         dlat = _180_PI * v / R
         dlng = _180_PI * u / (R * math.cos(lat * _PI_180))
@@ -98,9 +122,11 @@ def make_reverse_wind_velocity(dataset, warningcounts):
     """
     get_wind = interpolate.make_interpolator(dataset, warningcounts)
     dataset_epoch = calendar.timegm(dataset.ds_time.timetuple())
+
     def wind_velocity(t, lat, lng, alt):
         t -= dataset_epoch
-        u, v = get_wind(t / 3600.0, lat, lng, alt)
+        # tempも返ってくるので3つで受け取る (横移動にtempは不要なので捨てる)
+        u, v, _temp = get_wind(t / 3600.0, lat, lng, alt)
         # Reverse the sign of the u & v wind components
         u = -1 * u
         v = -1 * v
@@ -244,4 +270,27 @@ def reverse_profile(ascent_rate, wind_dataset, elevation_dataset, warningcounts)
                                     make_wind_velocity(wind_dataset, warningcounts)])
     term_down = make_elevation_data_termination(elevation_dataset)
 
+    return ((model_up, term_up), (model_down, term_down))
+
+def iwaya_profile(initial_ascent_rate, surface_temp_k, burst_altitude, descent_rate,
+                  wind_dataset, elevation_dataset, warningcounts):
+    """
+    岩谷技研モデルを使用したフルシミュレーションプロファイル
+    standard_profileの「上昇」部分を気温依存モデルに差し替えたもの。
+    """
+    # 1. 上昇フェーズ (気温依存モデル + 横風モデル)
+    model_up = make_linear_model([
+        make_varying_ascent(initial_ascent_rate, surface_temp_k, wind_dataset, warningcounts),
+        make_wind_velocity(wind_dataset, warningcounts)
+    ])
+    term_up = make_burst_termination(burst_altitude)
+
+    # 2. 下降フェーズ (パラシュート降下モデル + 横風モデル)
+    model_down = make_linear_model([
+        make_drag_descent(descent_rate),
+        make_wind_velocity(wind_dataset, warningcounts)
+    ])
+    term_down = make_elevation_data_termination(elevation_dataset)
+
+    # ソルバーが読めるように (モデル, 終了条件) のタプルにして返す
     return ((model_up, term_up), (model_down, term_down))

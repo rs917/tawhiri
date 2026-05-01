@@ -61,7 +61,8 @@ class Dataset(object):
     #: The dimensions of the dataset
     #:
     #: Note ``len(axes[i]) == shape[i]``.
-    shape = (65, 47, 3, 361, 720)
+    shape = (65, 47, 4, 361, 720)
+    #4個に拡張
 
     # TODO: use the other levels too?
     # {10, 80, 100}m heightAboveGround (u, v)
@@ -89,10 +90,11 @@ class Dataset(object):
     axes = _axes_type(
         range(0, 192 + 3, 3),
         sorted(pressures_pgrb2f + pressures_pgrb2bf, reverse=True),
-        ["height", "wind_u", "wind_v"],
+["height", "wind_u", "wind_v","temp"],
         [x/2.0 for x in range(-180, 180 + 1)],
         [x/2.0 for x in range(0, 720)]
     )
+    #tempを追加
 
     _listdir_type = namedtuple("dataset_in_row",
                 ("ds_time", "suffix", "filename", "path"))

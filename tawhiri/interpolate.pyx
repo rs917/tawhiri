@@ -44,6 +44,7 @@ from .warnings cimport WarningCounts
 DEF VAR_A = 0
 DEF VAR_U = 1
 DEF VAR_V = 2
+DEF VAR_T = 3#tempを追加
 
 
 ctypedef float[:, :, :, :, :] dataset
@@ -79,7 +80,7 @@ def make_interpolator(dataset, WarningCounts warnings):
     if warnings is None:
         raise TypeError("Warnings must not be None")
 
-    data = MagicMemoryView(dataset.array, (65, 47, 3, 361, 720), b"f")
+    data = MagicMemoryView(dataset.array, (65, 47, 4, 361, 720), b"f")#4にした
 
     def f(hour, lat, lng, alt):
         return get_wind(data, warnings, hour, lat, lng, alt)
@@ -102,8 +103,7 @@ cdef object get_wind(dataset ds, WarningCounts warnings,
 
     cdef Lerp3[8] lerps
     cdef long altidx
-    cdef double lower, upper, u, v
-
+    cdef double lower, upper, u, v,t# t を追加
     pick3(hour, lat, lng, lerps)
 
     altidx = search(ds, lerps, alt)
@@ -119,10 +119,13 @@ cdef object get_wind(dataset ds, WarningCounts warnings,
 
     cdef Lerp1 alt_lerp = Lerp1(altidx, lerp)
 
-    u = interp4(ds, lerps, alt_lerp, VAR_U)
-    v = interp4(ds, lerps, alt_lerp, VAR_V)
+    cdef Lerp1 alt_lerp_st = alt_lerp # 型の明示
 
-    return u, v, 
+    u = interp4(ds, lerps, alt_lerp_st, VAR_U)
+    v = interp4(ds, lerps, alt_lerp_st, VAR_V)
+    t = interp4(ds, lerps, alt_lerp_st, VAR_T)
+
+    return u, v, t # tempも返す
 
 cdef long pick(double left, double step, long n, double value,
                object variable_name, Lerp1[2] out) except -1:

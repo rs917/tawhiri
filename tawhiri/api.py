@@ -1,3 +1,4 @@
+
 # Copyright 2014 (C) Priyesh Patel
 #
 # This file is part of Tawhiri.
@@ -25,6 +26,7 @@ from datetime import datetime
 import time
 import strict_rfc3339
 from io import BytesIO
+import calendar#追加
 
 from tawhiri import solver, models
 from tawhiri.dataset import Dataset as WindDataset
@@ -312,12 +314,32 @@ def run_prediction(req,mode=None):
 
     # Stages
     if req['profile'] == PROFILE_STANDARD:
-        stages = models.standard_profile(req['ascent_rate'],
-                                         req['burst_altitude'],
-                                         req['descent_rate'],
-                                         tawhiri_ds,
-                                         ruaumoko_ds(),
-                                         warningcounts)
+# --- 岩谷モデルのための地表気温自動取得処理 ---
+        get_wind_and_temp = models.interpolate.make_interpolator(tawhiri_ds, warningcounts)
+        dataset_epoch = calendar.timegm(tawhiri_ds.ds_time.timetuple())
+        
+        # 打ち上げ時刻のオフセット計算
+        hour_offset = (req['launch_datetime'] - dataset_epoch) / 3600.0
+        
+        # 指定された緯度・経度・高度での気温(surface_temp_k)を取得
+        _, _, surface_temp_k = get_wind_and_temp(
+            hour_offset, 
+            req['launch_latitude'], 
+            req['launch_longitude'], 
+            req['launch_altitude']
+        )
+        
+        # standard_profileの代わりに、iwaya_profileを呼び出す
+        stages = models.iwaya_profile(
+            req['ascent_rate'],
+            surface_temp_k,
+            req['burst_altitude'],
+            req['descent_rate'],
+            tawhiri_ds,
+            ruaumoko_ds(),
+            warningcounts
+        )
+        # ----------------------------------------------
     elif req['profile'] == PROFILE_FLOAT:
         stages = models.float_profile(req['ascent_rate'],
                                       req['float_altitude'],
